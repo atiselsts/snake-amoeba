@@ -22,6 +22,7 @@ function reachable(w, f) {
 
 function checkMap(w, label) {
   for (const f of w.food) if (!reachable(w, f)) fail(`${label}: unreachable ${f.kind} at ${f.x | 0},${f.y | 0} (${f.where})`);
+  if (w.cacti.length && w.level.map !== 'cactus' && !w.tutorial) fail(`${label}: cacti outside cactus land`);
   for (const c of w.cacti) if (c.ry * 2 >= HOP - 20) fail(`${label}: cactus too tall to hop`);
   for (const l of w.ledges) {
     const from = l.upper ? l.y + 130 : W.groundY(w, l.x);
