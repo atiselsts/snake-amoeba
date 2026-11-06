@@ -10,20 +10,26 @@ const TRAIL_STEP = 5;
 const SAG_SPEED = 240;
 const SAFE_TIME = 2.5;
 const LIVES = 3;
+// How fast a snake sheds speed, which is what makes turning round take a moment. Going from
+// full speed one way to full speed the other takes about 0.7 seconds.
+const TURN_ACCEL = 520;
+const REMAINS_SHARE = 0.6;
+const REMAINS_TIME = 25;
 
 const FOOD_KINDS = {
-  small: { r: 8, value: 1, weight: 80 },
-  big: { r: 18, value: 5, weight: 18 },
-  star: { r: 16, value: 10, weight: 2 },
+  small: { r: 10, value: 1, weight: 80 },
+  big: { r: 20, value: 5, weight: 18 },
+  gold: { r: 18, value: 10, weight: 2 },
 };
 
 // decay is size lost per second. food is how many bits lie around, and refill is the seconds
 // between new ones, which sets how fast a level can be won. aggro is how far away a rival
 // notices smaller snakes, so 0 means rivals only ever eat by accident.
 const LEVELS = [
+  { map: 'plain', tutorial: true, width: 3800, start: 10, target: 0, rivals: [], decay: 0.25, food: 0, refill: Infinity, aggro: 0, rivalSpeed: 0.5, cacti: 0 },
   { map: 'plain', width: 2400, start: 10, target: 30, rivals: [5, 7], decay: 0.3, food: 12, refill: 2.0, aggro: 0, rivalSpeed: 0.62, cacti: 0 },
-  { map: 'forest', width: 2600, start: 10, target: 40, rivals: [6, 14], decay: 0.3, food: 14, refill: 1.7, aggro: 0, rivalSpeed: 0.62, cacti: 0 },
-  { map: 'cactus', width: 2800, start: 12, target: 50, rivals: [8, 16], decay: 0.3, food: 15, refill: 1.5, aggro: 100, rivalSpeed: 0.64, cacti: 7 },
+  { map: 'forest', width: 2600, start: 10, target: 40, rivals: [6, 14], decay: 0.25, food: 15, refill: 1.5, aggro: 0, rivalSpeed: 0.62, cacti: 0 },
+  { map: 'cactus', width: 2800, start: 12, target: 50, rivals: [8, 16], decay: 0.25, food: 16, refill: 1.35, aggro: 100, rivalSpeed: 0.64, cacti: 7 },
   { map: 'plain', width: 3000, start: 14, target: 60, rivals: [6, 12, 20], decay: 0.3, food: 16, refill: 1.4, aggro: 120, rivalSpeed: 0.65, cacti: 3 },
   { map: 'forest', width: 3200, start: 16, target: 70, rivals: [10, 16, 26], decay: 0.35, food: 18, refill: 1.25, aggro: 130, rivalSpeed: 0.66, cacti: 0 },
   { map: 'cactus', width: 3400, start: 18, target: 80, rivals: [10, 20, 30], decay: 0.35, food: 20, refill: 1.15, aggro: 140, rivalSpeed: 0.67, cacti: 11 },
@@ -37,6 +43,55 @@ const LEVELS = [
 
 const SKINS = ['plain', 'stripes', 'hearts', 'dots', 'stars', 'zigzag', 'rainbow'];
 const COLORS = ['#35c2a6', '#f2709c', '#9b6bea', '#f79a3e', '#4a9bf0', '#8ccc3f', '#ef5a50', '#f4c531'];
+
+// Stars buy these, and a pattern's and a colour's bonuses multiply. Every level must stay
+// winnable with no bonuses at all: tools/check-levels.js plays with plain teal.
+const SKIN_UPGRADES = {
+  plain: { cost: 0, perks: {} },
+  stripes: { cost: 3, perks: { speed: 1.08 } },
+  dots: { cost: 3, perks: { jump: 1.2 } },
+  zigzag: { cost: 4, perks: { turn: 1.5 } },
+  hearts: { cost: 5, perks: { shrink: 0.75 } },
+  stars: { cost: 6, perks: { speed: 1.06, jump: 1.15 } },
+  rainbow: { cost: 12, perks: { speed: 1.1, jump: 1.25, turn: 1.6 } },
+};
+const COLOR_UPGRADES = [
+  { cost: 0, perks: {} },
+  { cost: 2, perks: { turn: 1.2 } },
+  { cost: 2, perks: { jump: 1.1 } },
+  { cost: 2, perks: { speed: 1.04 } },
+  { cost: 3, perks: { turn: 1.35 } },
+  { cost: 3, perks: { jump: 1.2 } },
+  { cost: 4, perks: { speed: 1.08 } },
+  { cost: 4, perks: { speed: 1.05, jump: 1.1, turn: 1.2 } },
+];
+
+function perksOf(look) {
+  const out = { speed: 1, jump: 1, turn: 1, shrink: 1 };
+  const color = COLOR_UPGRADES[COLORS.indexOf(look.color)];
+  for (const upgrade of [SKIN_UPGRADES[look.skin], color]) {
+    for (const key of Object.keys(upgrade.perks)) out[key] *= upgrade.perks[key];
+  }
+  return out;
+}
+
+// First win of a level pays more, and later levels pay more, so that one pass through the
+// game earns enough to buy everything.
+const starsFor = (levelIndex, firstWin) => (firstWin ? 3 + Math.floor(levelIndex / 3) : 1);
+
+// The tutorial walks left to right. Each step ends on reaching goalX, eating the egg tagged
+// tag, biting the small rival (victim), or clearing the remains.
+const TUTORIAL_STEPS = [
+  { id: 'move', goalX: 820 },
+  { id: 'hop', tag: 'hop' },
+  { id: 'big', tag: 'big' },
+  { id: 'climb', tag: 'climb' },
+  { id: 'cactus', goalX: 2080 },
+  { id: 'shrink', goalX: 2420, decay: true },
+  { id: 'bite', victim: true },
+  { id: 'remains', remains: true },
+  { id: 'flee', goalX: 3680 },
+];
 
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 const radiusOf = (size) => 17 + 2.2 * Math.sqrt(Math.max(size, 1));
@@ -76,8 +131,35 @@ function spreadPositions(rand, count, from, to, jitter) {
   return out;
 }
 
+function addEgg(w, x, y, kind, where, tag) {
+  const { r, value } = FOOD_KINDS[kind];
+  w.food.push({ x, y, kind, r, value, where, tag, phase: 0 });
+}
+
+function buildTutorial(w) {
+  w.terrain = { a1: 8, f1: 0.003, p1: 0, a2: 0, f2: 0, p2: 0 };
+  w.trees = [];
+  w.cacti = [];
+  w.ledges = [];
+  const floor = (x, kind) => groundY(w, x) - FOOD_KINDS[kind].r - 3;
+  addEgg(w, 480, floor(480, 'small'), 'small', 'ground');
+  addEgg(w, 660, floor(660, 'small'), 'small', 'ground');
+  addEgg(w, 1000, groundY(w, 1000) - 150, 'small', 'air', 'hop');
+  addEgg(w, 1260, floor(1260, 'big'), 'big', 'ground', 'big');
+  const baseY = groundY(w, 1560);
+  w.trees.push({ x: 1560, baseY, top: baseY - 400, crownBottom: baseY - 110, halfW: 125, seed: 3 });
+  addEgg(w, 1560, baseY - 320, 'big', 'tree', 'climb');
+  w.cacti.push({ x: 1950, rx: 28, ry: 52, baseY: groundY(w, 1950) + 4, seed: 5 });
+  addEgg(w, 2220, floor(2220, 'small'), 'small', 'ground');
+  addEgg(w, 2340, floor(2340, 'small'), 'small', 'ground');
+}
+
 function buildMap(w) {
   const { rand, level } = w;
+  if (level.tutorial) {
+    buildTutorial(w);
+    return;
+  }
   const hilly = { plain: 26, forest: 14, cactus: 18 }[level.map];
   w.terrain = {
     a1: hilly, f1: 0.0031 + rand() * 0.001, p1: rand() * 6.28,
@@ -164,6 +246,7 @@ function makeSnake(w, id, x, size, look, isPlayer) {
     id, isPlayer, x, y, vx: 0, vy: 0, mode: 'ground', ledge: null, size, startSize: size, look,
     facing, trail: [], alive: true, safeT: SAFE_TIME, hurtT: 0, stunT: 0, bumpT: 0, dropT: 0, chewT: 0,
     thinkT: 0, goal: null, respawnT: 0, chaseT: 0, restT: 0, speedScale: isPlayer ? 1 : w.level.rivalSpeed,
+    perks: perksOf(isPlayer ? look : { skin: 'plain', color: COLORS[0] }),
   };
   const len = lengthOf(size);
   for (let d = len; d >= 0; d -= TRAIL_STEP) {
@@ -197,6 +280,18 @@ function createWorld(levelIndex, seed, look) {
   };
   buildMap(w);
   w.snakes.push(makeSnake(w, 0, level.width / 2, level.start, look, true));
+  if (level.tutorial) {
+    w.snakes[0] = makeSnake(w, 0, 220, level.start, look, true);
+    w.snakes[0].facing = 1;
+    const victim = makeSnake(w, 1, 2720, 5, rivalLook(w.rand, look.color), false);
+    victim.idle = true;
+    const guard = makeSnake(w, 2, 3320, 60, rivalLook(w.rand, look.color), false);
+    guard.pace = [3060, 3540];
+    w.snakes.push(victim, guard);
+    w.tutorial = { index: 0, decay: false, marker: null, checkpoint: 220 };
+    w.events.push({ type: 'step', id: TUTORIAL_STEPS[0].id });
+    return w;
+  }
   level.rivals.forEach((size, i) => {
     w.snakes.push(makeSnake(w, i + 1, rivalSpawnX(w), size, rivalLook(w.rand, look.color), false));
   });
@@ -205,7 +300,7 @@ function createWorld(levelIndex, seed, look) {
 }
 
 function speedOf(s) {
-  return (285 - Math.min(70, s.size * 0.25)) * s.speedScale;
+  return (285 - Math.min(70, s.size * 0.25)) * s.speedScale * s.perks.speed;
 }
 
 function moveSnake(w, s, inp) {
@@ -213,9 +308,14 @@ function moveSnake(w, s, inp) {
   const speed = speedOf(s);
   const stunned = s.stunT > 0;
   const want = stunned ? 0 : (inp.right ? 1 : 0) - (inp.left ? 1 : 0);
-  const accel = s.mode === 'air' ? 1500 : 2600;
+  // Only speeding up in the direction of travel is quick; a snake must first lose its speed
+  // to turn round. Gripping a tree is the exception, or branches would be too slippery to use.
+  const speedingUp = want && s.vx * want >= 0;
+  let accel = TURN_ACCEL * s.perks.turn;
+  if (s.mode === 'climb') accel = 2600;
+  else if (speedingUp) accel = s.mode === 'air' ? 1200 : 1800;
   if (!stunned) s.vx += clamp(want * speed - s.vx, -accel * DT, accel * DT);
-  if (want) s.facing = want;
+  if (Math.abs(s.vx) > 15) s.facing = Math.sign(s.vx);
   const up = inp.up && !stunned;
   const down = inp.down && !stunned;
 
@@ -271,7 +371,7 @@ function moveSnake(w, s, inp) {
     } else if (up) {
       s.ledge = null;
       s.mode = 'air';
-      s.vy = -JUMP_V;
+      s.vy = -JUMP_V * Math.sqrt(s.perks.jump);
       if (s.isPlayer) w.events.push({ type: 'hop' });
     }
   }
@@ -344,11 +444,12 @@ function eatFood(w, s) {
   const r = radiusOf(s.size);
   for (let i = w.food.length - 1; i >= 0; i--) {
     const f = w.food[i];
-    if (Math.hypot(f.x - s.x, f.y - s.y) > r + f.r + 6) continue;
+    // Pieces must land first, or those by the winner's mouth would vanish before being seen.
+    if (f.falling || Math.hypot(f.x - s.x, f.y - s.y) > r + f.r + 6) continue;
     w.food.splice(i, 1);
     grow(w, s, f.value);
     s.chewT = 0.25;
-    w.events.push({ type: 'eat', kind: f.kind, value: f.value, x: f.x, y: f.y, id: s.id, player: s.isPlayer });
+    w.events.push({ type: 'eat', kind: f.kind, value: f.value, x: f.x, y: f.y, id: s.id, player: s.isPlayer, color: f.color });
   }
 }
 
@@ -416,12 +517,11 @@ function meetSnakes(w) {
       }
       const big = sa > sb ? a : b;
       const small = sa > sb ? b : a;
-      const gain = Math.ceil(shownSize(small) / 2);
+      breakUp(w, small);
       kill(w, small);
-      grow(w, big, gain);
       big.chewT = 0.4;
       w.events.push({
-        type: 'gulp', gain, x: small.x, y: small.y, id: big.id, victim: small.id, player: big.isPlayer,
+        type: 'gulp', x: small.x, y: small.y, id: big.id, victim: small.id, player: big.isPlayer,
         color: small.look.color,
       });
       if (small.isPlayer) {
@@ -433,10 +533,64 @@ function meetSnakes(w) {
   }
 }
 
+// A beaten snake bursts into round pieces along its body. Bigger snakes leave bigger pieces
+// rather than more of them. Whoever gets there first can eat them, so the winner of a fight
+// still has to collect.
+function breakUp(w, s) {
+  const size = shownSize(s);
+  const total = Math.max(2, Math.ceil(size * REMAINS_SHARE));
+  const value = clamp(Math.round(size / 8), 1, 10);
+  const count = Math.max(2, Math.ceil(total / value));
+  const pts = bodyPoints(s, 12);
+  for (let i = 0; i < count; i++) {
+    const p = pts[Math.floor((i * (pts.length - 1)) / (count - 1))];
+    w.food.push({
+      x: p.x, y: p.y, kind: 'chunk', value, r: 9 + value * 1.5, color: s.look.color, where: 'ground',
+      phase: w.rand() * 6.28, life: REMAINS_TIME, falling: true,
+      vx: (w.rand() - 0.5) * 240, vy: -120 - w.rand() * 220,
+    });
+  }
+}
+
+function dropChunk(w, f) {
+  const prevBottom = f.y + f.r;
+  f.vy += GRAVITY * DT;
+  f.x = clamp(f.x + f.vx * DT, 40, w.level.width - 40);
+  f.y += f.vy * DT;
+  const bottom = f.y + f.r;
+  const ledge = f.vy > 0 && w.ledges.find((l) => Math.abs(f.x - l.x) < l.half && prevBottom <= l.y && bottom >= l.y);
+  if (ledge) {
+    f.y = ledge.y - f.r;
+    f.falling = false;
+    return;
+  }
+  if (f.y < groundY(w, f.x) - f.r) return;
+  // Never come to rest in the spines, where eating the piece would cost more than it gives.
+  for (const c of w.cacti) {
+    if (Math.abs(c.x - f.x) < c.rx + 44) f.x = c.x + (f.x < c.x ? -1 : 1) * (c.rx + 46);
+  }
+  f.y = groundY(w, f.x) - f.r;
+  f.falling = false;
+}
+
+function updateRemains(w) {
+  for (let i = w.food.length - 1; i >= 0; i--) {
+    const f = w.food[i];
+    if (f.kind !== 'chunk') continue;
+    if (f.falling) dropChunk(w, f);
+    f.life -= DT;
+    if (f.life <= 0) w.food.splice(i, 1);
+  }
+}
+
 // The ground is a single lane, so a long level would otherwise end on one unlucky meeting.
 // A new life comes back where rivals are furthest away, with half the size it had.
 function loseLife(w, reason) {
   const old = w.snakes[0];
+  if (w.tutorial) {
+    w.snakes[0] = makeSnake(w, 0, w.tutorial.checkpoint, w.level.start, old.look, true);
+    return;
+  }
   w.lives -= 1;
   w.reason = reason;
   if (w.lives <= 0) {
@@ -518,6 +672,15 @@ function think(w, s, hunt) {
 }
 
 function botInput(w, s, hunt) {
+  if (s.idle) return {};
+  if (s.pace) {
+    const [from, to] = s.pace;
+    if (!s.goal || Math.abs(s.goal.x - s.x) < 30) {
+      const x = s.goal && s.goal.x === to ? from : to;
+      s.goal = { x, y: groundY(w, x) - 20, snake: true };
+    }
+    s.thinkT = 1;
+  }
   s.thinkT -= DT;
   if (s.thinkT <= 0) {
     think(w, s, hunt);
@@ -555,7 +718,41 @@ function stepSnake(w, s, inp) {
   updateTrail(w, s);
   eatFood(w, s);
   pricks(w, s);
-  s.size -= w.level.decay * DT;
+  // In the tutorial nothing shrinks until that step, and rivals stay as they are.
+  const shrinking = !w.tutorial || (s.isPlayer && w.tutorial.decay);
+  if (shrinking) s.size -= w.level.decay * s.perks.shrink * DT;
+}
+
+function updateTutorial(w) {
+  const t = w.tutorial;
+  const step = TUTORIAL_STEPS[t.index];
+  const p = w.snakes[0];
+  let marker = null;
+  let done = false;
+  if (step.goalX) {
+    done = p.x >= step.goalX;
+    marker = { x: step.goalX, y: groundY(w, step.goalX) - 70 };
+  } else if (step.tag) {
+    marker = w.food.find((f) => f.tag === step.tag);
+    done = !marker;
+  } else if (step.victim) {
+    done = !w.snakes[1].alive;
+    marker = w.snakes[1];
+  } else {
+    marker = w.food.find((f) => f.kind === 'chunk');
+    done = !marker;
+  }
+  t.marker = marker && { x: marker.x, y: marker.y };
+  if (!done) return;
+  t.index += 1;
+  t.checkpoint = p.x;
+  if (t.index >= TUTORIAL_STEPS.length) {
+    w.state = 'won';
+    return;
+  }
+  const next = TUTORIAL_STEPS[t.index];
+  if (next.decay) t.decay = true;
+  w.events.push({ type: 'step', id: next.id });
 }
 
 function stepWorld(w, playerInput) {
@@ -563,7 +760,7 @@ function stepWorld(w, playerInput) {
   w.time += DT;
   for (const s of w.snakes) {
     if (!s.alive) {
-      if (!s.isPlayer) {
+      if (!s.isPlayer && !w.tutorial) {
         s.respawnT -= DT;
         if (s.respawnT <= 0) respawn(w, s);
       }
@@ -573,9 +770,11 @@ function stepWorld(w, playerInput) {
     if (s.size <= 0 && !s.isPlayer) kill(w, s);
   }
   meetSnakes(w);
+  updateRemains(w);
 
   w.refillT -= DT;
-  if (w.refillT <= 0 && w.food.length < w.level.food) {
+  const eggs = w.food.filter((f) => f.kind !== 'chunk').length;
+  if (w.refillT <= 0 && eggs < w.level.food) {
     spawnFood(w);
     w.refillT = w.level.refill;
   }
@@ -584,6 +783,8 @@ function stepWorld(w, playerInput) {
   const player = w.snakes[0];
   if (player.size <= 0) {
     loseLife(w, 'starved');
+  } else if (w.tutorial) {
+    updateTutorial(w);
   } else if (shownSize(player) >= w.level.target) {
     w.state = 'won';
   }
@@ -592,6 +793,6 @@ function stepWorld(w, playerInput) {
 if (typeof module !== 'undefined') {
   module.exports = {
     DT, VIEW_H, GROUND_Y, JUMP_V, GRAVITY, LEVELS, SKINS, COLORS, FOOD_KINDS,
-    LIVES, createWorld, stepWorld, botInput, groundY, treeAt, treeHalfWidth, shownSize, radiusOf, bodyPoints,
+    LIVES, TURN_ACCEL, TUTORIAL_STEPS, SKIN_UPGRADES, COLOR_UPGRADES, perksOf, starsFor, createWorld, stepWorld, botInput, groundY, treeAt, treeHalfWidth, shownSize, radiusOf, bodyPoints,
   };
 }

@@ -53,7 +53,7 @@ const Sound = (() => {
   const sounds = {
     small: () => tone(520, 880, 0.09, { gain: 0.14 }),
     big: () => { tone(260, 620, 0.16, { gain: 0.22 }); tone(620, 900, 0.1, { gain: 0.12, delay: 0.1 }); },
-    star: () => notes([784, 988, 1175, 1568], 0.07, { type: 'triangle', gain: 0.16 }),
+    gold: () => notes([784, 988, 1175, 1568], 0.07, { type: 'triangle', gain: 0.16 }),
     hop: () => tone(240, 480, 0.13, { type: 'triangle', gain: 0.1 }),
     gulp: () => { tone(420, 120, 0.22, { type: 'square', gain: 0.1 }); tone(160, 90, 0.2, { gain: 0.25, delay: 0.16 }); },
     prick: () => { tone(900, 300, 0.14, { type: 'sawtooth', gain: 0.12 }); },
@@ -61,6 +61,9 @@ const Sound = (() => {
     life: () => notes([440, 370, 294], 0.13, { type: 'triangle', gain: 0.18 }),
     win: () => notes([523, 659, 784, 1047, 784, 1047], 0.12, { type: 'triangle', gain: 0.18 }),
     lose: () => notes([392, 330, 262, 196], 0.18, { type: 'triangle', gain: 0.18 }),
+    chunk: () => tone(340, 700, 0.12, { gain: 0.2 }),
+    buy: () => notes([660, 880, 1320], 0.08, { type: 'triangle', gain: 0.16 }),
+    step: () => notes([660, 990], 0.08, { type: 'triangle', gain: 0.12 }),
     click: () => tone(660, 720, 0.05, { type: 'triangle', gain: 0.1 }),
   };
 

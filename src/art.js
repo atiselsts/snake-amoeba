@@ -215,40 +215,92 @@ const Art = (() => {
     ctx.closePath();
   }
 
-  function drawFood(ctx, f, t, calm) {
-    const y = f.y + (f.where === 'ground' || calm ? 0 : Math.sin(t * 2.2 + f.phase) * 3);
-    if (f.kind === 'star') {
-      ctx.fillStyle = '#ffd33d';
-      ctx.strokeStyle = '#c98a10';
-      ctx.lineWidth = 2.5;
-      ctx.lineJoin = 'round';
-      starPath(ctx, f.x, y, f.r * 1.25, 0.5);
-      ctx.fill();
-      ctx.stroke();
-      ctx.fillStyle = INK;
-      ctx.beginPath();
-      ctx.arc(f.x - 4, y - 2, 1.8, 0, TAU);
-      ctx.arc(f.x + 4, y - 2, 1.8, 0, TAU);
-      ctx.fill();
-      ctx.strokeStyle = INK;
-      ctx.lineWidth = 1.6;
-      ctx.beginPath();
-      ctx.arc(f.x, y + 1, 3.6, 0.2, Math.PI - 0.2);
-      ctx.stroke();
-      return;
-    }
-    const big = f.kind === 'big';
-    const main = big ? '#e8485b' : '#ffae2b';
-    const g = ctx.createRadialGradient(f.x + f.r * 0.3, y + f.r * 0.35, f.r * 0.1, f.x, y, f.r);
-    g.addColorStop(0, shade(main, 0.35));
-    g.addColorStop(1, shade(main, -0.28));
+  // Oblong and speckled, as eggs are; only the leftovers of a fight are truly round.
+  function drawEgg(ctx, f, y, shell, speck, t, calm) {
+    const rx = f.r * 0.82;
+    const ry = f.r * 1.14;
+    const tilt = f.where === 'ground' || calm ? 0 : Math.sin(t * 1.8 + f.phase) * 0.14;
+    ctx.save();
+    ctx.translate(f.x, y);
+    ctx.rotate(tilt);
+    const g = ctx.createRadialGradient(-rx * 0.3, -ry * 0.4, f.r * 0.1, 0, 0, f.r * 1.2);
+    g.addColorStop(0, shade(shell, 0.6));
+    g.addColorStop(1, shade(shell, -0.12));
     ctx.fillStyle = g;
-    ctx.strokeStyle = shade(main, -0.5);
-    ctx.lineWidth = big ? 2.5 : 1.5;
+    ctx.strokeStyle = shade(shell, -0.5);
+    ctx.lineWidth = f.r > 14 ? 2.5 : 1.8;
     ctx.beginPath();
-    ctx.arc(f.x, y, f.r, 0, TAU);
+    ctx.moveTo(0, -ry);
+    ctx.bezierCurveTo(rx * 0.75, -ry, rx * 1.1, ry * 0.05, rx, ry * 0.3);
+    ctx.bezierCurveTo(rx * 0.9, ry * 0.8, rx * 0.45, ry, 0, ry);
+    ctx.bezierCurveTo(-rx * 0.45, ry, -rx * 0.9, ry * 0.8, -rx, ry * 0.3);
+    ctx.bezierCurveTo(-rx * 1.1, ry * 0.05, -rx * 0.75, -ry, 0, -ry);
+    ctx.closePath();
     ctx.fill();
     ctx.stroke();
+    ctx.fillStyle = speck;
+    const specks = f.r > 14 ? 7 : 4;
+    for (let i = 0; i < specks; i++) {
+      const a = hash(i + 3) * TAU;
+      const d = 0.2 + hash(i + 7) * 0.5;
+      ctx.beginPath();
+      ctx.ellipse(Math.cos(a) * rx * d, Math.sin(a) * ry * d + ry * 0.1, f.r * 0.11, f.r * 0.08, a, 0, TAU);
+      ctx.fill();
+    }
+    ctx.restore();
+  }
+
+  function drawChunk(ctx, f, y, t, calm) {
+    if (f.life < 4 && Math.floor(t * 6) % 2) return;
+    const wobble = calm ? 0 : Math.sin(t * 4 + f.phase) * 0.05;
+    const g = ctx.createRadialGradient(f.x - f.r * 0.3, y - f.r * 0.35, f.r * 0.1, f.x, y, f.r);
+    g.addColorStop(0, shade(f.color, 0.45));
+    g.addColorStop(1, shade(f.color, -0.2));
+    ctx.fillStyle = g;
+    ctx.strokeStyle = shade(f.color, -0.5);
+    ctx.lineWidth = 2.5;
+    ctx.beginPath();
+    ctx.ellipse(f.x, y, f.r * (1 + wobble), f.r * (1 - wobble), 0, 0, TAU);
+    ctx.fill();
+    ctx.stroke();
+  }
+
+  function drawFood(ctx, f, t, calm) {
+    const y = f.y + (f.where === 'ground' || calm ? 0 : Math.sin(t * 2.2 + f.phase) * 3);
+    if (f.kind === 'chunk') {
+      drawChunk(ctx, f, y, t, calm);
+      return;
+    }
+    if (f.kind === 'gold') {
+      drawEgg(ctx, f, y, '#ffcf3a', '#c98a10', t, calm);
+      ctx.fillStyle = '#fff';
+      const glint = calm ? 1 : 0.7 + 0.5 * Math.sin(t * 5 + f.phase);
+      starPath(ctx, f.x + f.r * 0.6, y - f.r * 0.8, f.r * 0.42 * glint, 0.3);
+      ctx.fill();
+      return;
+    }
+    if (f.kind === 'big') drawEgg(ctx, f, y, '#b9e6c8', '#3f9e72', t, calm);
+    else drawEgg(ctx, f, y, '#f2d9a4', '#9c6b3a', t, calm);
+  }
+
+  // Bouncing arrow over whatever the tutorial wants next.
+  function drawMarker(ctx, x, y, t, calm) {
+    const top = y - 76 + (calm ? 0 : Math.sin(t * 5) * 8);
+    ctx.fillStyle = '#ff7a1a';
+    ctx.strokeStyle = '#fff';
+    ctx.lineWidth = 4;
+    ctx.lineJoin = 'round';
+    ctx.beginPath();
+    ctx.moveTo(x - 11, top - 26);
+    ctx.lineTo(x + 11, top - 26);
+    ctx.lineTo(x + 11, top);
+    ctx.lineTo(x + 24, top);
+    ctx.lineTo(x, top + 26);
+    ctx.lineTo(x - 24, top);
+    ctx.lineTo(x - 11, top);
+    ctx.closePath();
+    ctx.stroke();
+    ctx.fill();
   }
 
   function normalAt(pts, i) {
@@ -539,7 +591,7 @@ const Art = (() => {
   }
 
   return {
-    THEMES, shade, drawBackdrop, drawGround, drawTree, drawCactus, drawLedge, drawFood, drawSnake,
+    THEMES, shade, drawBackdrop, drawGround, drawTree, drawCactus, drawLedge, drawFood, drawMarker, drawSnake,
     drawSampleSnake, drawMapCard, drawMinimap, heartPath, starPath,
   };
 })();

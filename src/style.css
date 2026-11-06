@@ -59,6 +59,7 @@ button:focus-visible { outline: 3px solid #1b6fd8; outline-offset: 2px; }
 
 #lives svg { width: 22px; height: 22px; display: block; }
 #meter { flex: 1; max-width: 460px; margin: 0 auto; }
+#meter:has(#meter-bar[hidden]) { flex: none; }
 #meter-bar { flex: 1; height: 14px; border-radius: 7px; background: #e4ddc9; overflow: hidden; min-width: 60px; }
 #meter-fill { height: 100%; width: 0; border-radius: 7px; background: var(--accent); transition: width .15s; }
 #meter-value { font-variant-numeric: tabular-nums; }
@@ -120,7 +121,7 @@ h3 { margin: 12px 0 8px; font-size: 18px; font-weight: 800; }
 p { margin: 4px 0 10px; font-size: 18px; font-weight: 600; }
 
 #mascot { width: 100%; max-width: 340px; height: auto; display: block; margin: 0 auto; }
-#preview { width: 100%; max-width: 480px; height: auto; display: block; margin: 0 auto; background: #eef8ee; border-radius: 16px; }
+#preview { width: 100%; max-width: 360px; height: auto; display: block; margin: 0 auto; background: #eef8ee; border-radius: 16px; }
 
 .lang { position: absolute; top: 14px; right: 16px; display: flex; gap: 4px; }
 .lang button {
@@ -132,7 +133,7 @@ p { margin: 4px 0 10px; font-size: 18px; font-weight: 600; }
 }
 .lang button.on { background: var(--accent); border-color: var(--accent); color: #fff; }
 
-#levels { display: grid; grid-template-columns: repeat(auto-fill, minmax(146px, 1fr)); gap: 10px; }
+#levels { display: grid; grid-template-columns: repeat(auto-fill, minmax(128px, 1fr)); gap: 8px; }
 
 .level {
   position: relative;
@@ -152,6 +153,22 @@ p { margin: 4px 0 10px; font-size: 18px; font-weight: 600; }
 .level:disabled canvas { filter: grayscale(.9) brightness(1.05); opacity: .55; }
 .level:disabled { color: #8d97a0; }
 .level .lock { position: absolute; top: 18px; left: 50%; width: 34px; height: 34px; margin-left: -17px; }
+
+.stars { position: absolute; top: 14px; left: 16px; height: 36px; background: #fff3c9; font-size: 20px; }
+.stars svg, #result-reward svg, .cost svg { width: 20px; height: 20px; display: inline-block; vertical-align: -3px; }
+#result-reward { font-weight: 900; }
+
+.cost { display: block; font-size: 14px; font-weight: 900; color: #a06a00; }
+.skin.locked canvas { filter: grayscale(.75); opacity: .7; }
+.skin.on.locked { border-color: #e0a100; background: #fff7dc; }
+
+#perks { display: flex; justify-content: center; flex-wrap: wrap; gap: 6px; min-height: 30px; margin-top: 12px; }
+#perks span { padding: 3px 12px; border-radius: 14px; background: #e4f8f1; font-size: 15px; font-weight: 800; color: var(--accent-deep); }
+#buy { display: flex; justify-content: center; gap: 8px; margin-top: 8px; }
+#buy:empty { display: none; }
+#buy button { min-height: 40px; padding: 0 16px; border: 0; border-radius: 12px; background: #f4c531; font-size: 17px; font-weight: 900; }
+#buy button:disabled { background: #ece6d5; color: #8d97a0; cursor: default; }
+.main:disabled { background: #cfd5d6; box-shadow: none; cursor: default; }
 
 #skins { display: grid; grid-template-columns: repeat(auto-fit, minmax(92px, 1fr)); gap: 8px; }
 
@@ -177,6 +194,7 @@ p { margin: 4px 0 10px; font-size: 18px; font-weight: 600; }
   box-shadow: 0 0 0 2px var(--line);
 }
 .swatch.on { box-shadow: 0 0 0 4px var(--ink); }
+.swatch.locked { position: relative; color: #fff; font-size: 15px; font-weight: 900; text-shadow: 0 1px 2px rgba(0, 0, 0, .6); }
 
 .actions { display: flex; justify-content: center; gap: 12px; margin-top: 16px; }
 .actions button { min-height: 50px; padding: 0 24px; border-radius: 16px; font-size: 20px; font-weight: 900; }

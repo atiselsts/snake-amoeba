@@ -21,8 +21,15 @@ Client-only side-view browser game for children, from `task.md` and a pencil ske
 - Well-fed rivals patrol instead of foraging, and rival growth is capped. Without this they clear
   the map, the player starves, and rivals stay too big to eat.
 - Food supply is set by `refill` far more than by `food`. Retune with the bot after changing either.
+- `LEVELS[0]` is the tutorial: it is laid out by hand, nothing costs a life, and its steps are in
+  `TUTORIAL_STEPS`. Numbered levels are shown by their index, so level 1 is `LEVELS[1]`.
+- Eggs are for food outside fights. The round `chunk` food only comes from a beaten snake, and it
+  can't be eaten while falling, or pieces beside the winner's mouth would vanish unseen.
+- Upgrade bonuses go only to the player. Every level must stay winnable with none, and one pass
+  through the game must earn enough stars to buy everything; the checker enforces both.
 - Sizes are compared as shown on screen (`shownSize`), so 100 beats 99 and equal numbers bounce.
 - Art follows the sketch: pointy smiling head, zigzag body, jagged conifers, oval spiny cacti.
+  Food was changed from the sketch's round bits to eggs on request.
 
 ## Coding practices
 

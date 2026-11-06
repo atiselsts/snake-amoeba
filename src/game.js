@@ -3,7 +3,7 @@
   const params = new URLSearchParams(location.search);
   const $ = (id) => document.getElementById(id);
   const calm = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-  const STORE_KEY = 'snake-amoeba-v1';
+  const STORE_KEY = 'snake-amoeba-v2';
 
   function loadSaved() {
     try {
@@ -16,23 +16,33 @@
   const saved = loadSaved();
   const state = {
     lang: params.get('lang') || saved.lang || 'lv',
-    unlocked: clamp(saved.unlocked || 1, 1, LEVELS.length),
+    beaten: clamp(saved.beaten || 0, 0, LEVELS.length),
+    stars: saved.stars || 0,
+    ownedSkins: saved.ownedSkins || [],
+    ownedColors: saved.ownedColors || [],
     skin: SKINS.includes(saved.skin) ? saved.skin : 'plain',
     color: COLORS.includes(saved.color) ? saved.color : COLORS[0],
     muted: Boolean(saved.muted),
     levelIndex: 0,
   };
+  // What the chooser is showing, which may be something not bought yet.
+  const pick = { skin: state.skin, color: state.color };
 
   function save() {
-    const { lang, unlocked, skin, color, muted } = state;
+    const { lang, beaten, stars, ownedSkins, ownedColors, skin, color, muted } = state;
     try {
-      localStorage.setItem(STORE_KEY, JSON.stringify({ lang, unlocked, skin, color, muted }));
+      localStorage.setItem(STORE_KEY, JSON.stringify({ lang, beaten, stars, ownedSkins, ownedColors, skin, color, muted }));
     } catch {
       // Private windows can refuse storage; the game just forgets progress.
     }
   }
 
   const T = (key, vars = {}) => TEXT[state.lang][key].replace(/\{(\w+)\}/g, (_, k) => vars[k]);
+  const levelName = (i) => (LEVELS[i].tutorial ? T('tutorial') : T('level', { n: i }));
+  const levelNote = (i) => (LEVELS[i].tutorial ? T('tutorialNote') : T('goal', { n: LEVELS[i].target }));
+  const ownsSkin = (skin) => SKIN_UPGRADES[skin].cost === 0 || state.ownedSkins.includes(skin);
+  const colorCost = (color) => COLOR_UPGRADES[COLORS.indexOf(color)].cost;
+  const ownsColor = (color) => colorCost(color) === 0 || state.ownedColors.includes(color);
 
   const canvas = $('view');
   const ctx = canvas.getContext('2d');
@@ -68,6 +78,7 @@
     soundOn: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M3 9v6h4l5 5V4L7 9z"/><path d="M15 8a5 5 0 0 1 0 8M17.5 5a9 9 0 0 1 0 14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>',
     soundOff: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M3 9v6h4l5 5V4L7 9z"/><path d="M16 9l5 6M21 9l-5 6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>',
     heart: (on) => `<svg viewBox="0 0 24 24" fill="${on ? '#ef4a68' : '#d9d2bf'}"><path d="M12 21C5 15 2 12 2 8a5 5 0 0 1 10-1.5A5 5 0 0 1 22 8c0 4-3 7-10 13z"/></svg>`,
+    star: '<svg viewBox="0 0 24 24" fill="#f2ae12" stroke="#b87b00" stroke-width="1.5" stroke-linejoin="round"><path d="M12 2l3 6.6 7 .8-5.2 4.8 1.4 7L12 17.6 5.8 21.2l1.4-7L2 9.4l7-.8z"/></svg>',
     lock: '<svg class="lock" viewBox="0 0 24 24" fill="#5d6a75"><path d="M6 10V8a6 6 0 0 1 12 0v2h1a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V11a1 1 0 0 1 1-1zm3 0h6V8a3 3 0 0 0-6 0z"/></svg>',
   };
 
@@ -85,6 +96,7 @@
     $('menu-choose').textContent = T('chooseLevel');
     for (const b of document.querySelectorAll('.lang button')) b.classList.toggle('on', b.dataset.lang === state.lang);
 
+    $('menu-stars').innerHTML = `${ICONS.star} ${state.stars}`;
     const mascot = $('mascot').getContext('2d');
     mascot.clearRect(0, 0, 520, 130);
     Art.drawSampleSnake(mascot, 520, 130, { skin: state.skin, color: state.color }, 0.4, 36);
@@ -95,15 +107,15 @@
       const card = document.createElement('button');
       card.type = 'button';
       card.className = 'level';
-      const locked = i + 1 > state.unlocked;
+      const locked = i > state.beaten;
       card.disabled = locked;
       const pic = document.createElement('canvas');
       pic.width = 320;
       pic.height = 150;
       Art.drawMapCard(pic.getContext('2d'), level.map, 320, 150);
-      card.append(pic, T('level', { n: i + 1 }));
+      card.append(pic, levelName(i));
       const note = document.createElement('small');
-      for (const line of [T(`map.${level.map}`), T('goal', { n: level.target })]) {
+      for (const line of [level.tutorial ? '' : T(`map.${level.map}`), levelNote(i)].filter(Boolean)) {
         const row = document.createElement('span');
         row.textContent = line;
         note.append(row);
@@ -113,7 +125,8 @@
       card.addEventListener('click', () => {
         Sound.unlock();
         Sound.play('click');
-        openLooks(i);
+        if (level.tutorial) startLevel(0);
+        else openLooks(i);
       });
       list.append(card);
     });
@@ -130,24 +143,34 @@
 
   // ---- Choosing the snake ----
 
+  function perkLines(perks) {
+    const lines = [];
+    for (const key of ['speed', 'jump', 'turn']) {
+      if (perks[key] > 1) lines.push(T(`perk.${key}`, { n: Math.round((perks[key] - 1) * 100) }));
+    }
+    if (perks.shrink < 1) lines.push(T('perk.shrink', { n: Math.round((1 - perks.shrink) * 100) }));
+    return lines;
+  }
+
   function buildSkins() {
     const list = $('skins');
     list.textContent = '';
     for (const skin of SKINS) {
+      const owned = ownsSkin(skin);
       const card = document.createElement('button');
       card.type = 'button';
-      card.className = `skin${skin === state.skin ? ' on' : ''}`;
-      card.setAttribute('aria-pressed', skin === state.skin);
+      card.className = `skin${skin === pick.skin ? ' on' : ''}${owned ? '' : ' locked'}`;
+      card.setAttribute('aria-pressed', skin === pick.skin);
       const pic = document.createElement('canvas');
       pic.width = 180;
       pic.height = 84;
-      Art.drawSampleSnake(pic.getContext('2d'), 180, 84, { skin, color: state.color }, 0.4, 19);
+      Art.drawSampleSnake(pic.getContext('2d'), 180, 84, { skin, color: pick.color }, 0.4, 19);
       card.append(pic, T(`skin.${skin}`));
+      if (!owned) card.insertAdjacentHTML('beforeend', `<span class="cost">${ICONS.star} ${SKIN_UPGRADES[skin].cost}</span>`);
       card.addEventListener('click', () => {
         Sound.play('click');
-        state.skin = skin;
-        save();
-        buildSkins();
+        pick.skin = skin;
+        applyPick();
       });
       list.append(card);
     }
@@ -157,28 +180,73 @@
     const list = $('colors');
     list.textContent = '';
     COLORS.forEach((color, i) => {
+      const owned = ownsColor(color);
       const swatch = document.createElement('button');
       swatch.type = 'button';
-      swatch.className = `swatch${color === state.color ? ' on' : ''}`;
+      swatch.className = `swatch${color === pick.color ? ' on' : ''}${owned ? '' : ' locked'}`;
       swatch.style.background = color;
+      if (!owned) swatch.textContent = colorCost(color);
       swatch.setAttribute('aria-label', `${T('color')} ${i + 1}`);
-      swatch.setAttribute('aria-pressed', color === state.color);
+      swatch.setAttribute('aria-pressed', color === pick.color);
       swatch.addEventListener('click', () => {
         Sound.play('click');
-        state.color = color;
-        save();
-        buildColors();
-        buildSkins();
+        pick.color = color;
+        applyPick();
       });
       list.append(swatch);
     });
+  }
+
+  function buyButton(label, cost, onBuy) {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.innerHTML = `${label} <span class="cost" style="display:inline;color:inherit">${ICONS.star}</span>`;
+    button.disabled = cost > state.stars;
+    button.addEventListener('click', () => {
+      Sound.play('buy');
+      state.stars -= cost;
+      onBuy();
+      applyPick();
+    });
+    $('buy').append(button);
+  }
+
+  function buildShop() {
+    $('looks-stars').innerHTML = `${ICONS.star} ${state.stars}`;
+    const lines = perkLines(perksOf(pick));
+    $('perks').textContent = '';
+    for (const line of lines.length ? lines : [T('noPerks')]) {
+      const chip = document.createElement('span');
+      chip.textContent = line;
+      $('perks').append(chip);
+    }
+    $('buy').textContent = '';
+    if (!ownsSkin(pick.skin)) {
+      const { cost } = SKIN_UPGRADES[pick.skin];
+      buyButton(T('buySkin', { n: cost }), cost, () => state.ownedSkins.push(pick.skin));
+    }
+    if (!ownsColor(pick.color)) {
+      const cost = colorCost(pick.color);
+      buyButton(T('buyColor', { n: cost }), cost, () => state.ownedColors.push(pick.color));
+    }
+    $('btn-start').disabled = !ownsSkin(pick.skin) || !ownsColor(pick.color);
+  }
+
+  // Only something owned becomes the snake's look; the rest is just being tried on.
+  function applyPick() {
+    if (ownsSkin(pick.skin)) state.skin = pick.skin;
+    if (ownsColor(pick.color)) state.color = pick.color;
+    save();
+    buildSkins();
+    buildColors();
+    buildShop();
   }
 
   function openLooks(index) {
     state.levelIndex = index;
     const level = LEVELS[index];
     $('looks-title').textContent = T('chooseLook');
-    $('looks-level').textContent = `${T('level', { n: index + 1 })} · ${T(`map.${level.map}`)} · ${T('goal', { n: level.target })}`;
+    $('looks-level').textContent = `${levelName(index)} · ${T(`map.${level.map}`)} · ${levelNote(index)}`;
     $('looks-pattern').textContent = T('pattern');
     $('looks-color').textContent = T('color');
     $('btn-start').textContent = T('start');
@@ -186,8 +254,9 @@
     world = null;
     $('hud').hidden = true;
     $('toast').hidden = true;
-    buildSkins();
-    buildColors();
+    pick.skin = state.skin;
+    pick.color = state.color;
+    applyPick();
     showOnly('looks');
     $('btn-start').focus();
   }
@@ -206,7 +275,9 @@
     camX = clamp(world.snakes[0].x - viewW / 2, 0, Math.max(0, world.level.width - viewW));
     showOnly(null);
     $('hud').hidden = false;
-    $('level-name').textContent = T('level', { n: index + 1 });
+    $('level-name').textContent = levelName(index);
+    $('lives').hidden = Boolean(world.tutorial);
+    $('meter-bar').hidden = Boolean(world.tutorial);
     $('meter-label').textContent = T('size');
     updatePauseIcon();
     updateHud();
@@ -215,11 +286,7 @@
   }
 
   function queueHints(index) {
-    const level = LEVELS[index];
-    hints = [T('hintGoal', { n: level.target })];
-    if (index === 0) hints.push(T('hintMove'), T('hintRivals'));
-    if (level.map === 'forest' && index < 3) hints.push(T('hintForest'));
-    if (level.cacti && index < 4) hints.push(T('hintCactus'));
+    hints = LEVELS[index].tutorial ? [] : [T('hintGoal', { n: LEVELS[index].target })];
     nextHint();
   }
 
@@ -237,7 +304,7 @@
   function updateHud() {
     const size = shownSize(world.snakes[0]);
     const { target } = world.level;
-    $('meter-value').textContent = `${size} / ${target}`;
+    $('meter-value').textContent = world.tutorial ? size : `${size} / ${target}`;
     $('meter-fill').style.width = `${clamp(size / target, 0, 1) * 100}%`;
     const hearts = [];
     for (let i = 0; i < LIVES; i++) hearts.push(ICONS.heart(i < world.lives));
@@ -290,14 +357,11 @@
           floatText(e.x, e.y - 20, `+${e.value}`, '#1f8a71');
           if (e.kind !== 'small') addBulge(e.id);
         }
-        burst(e.x, e.y, e.kind === 'big' ? '#e8485b' : '#ffc23d', e.kind === 'small' ? 4 : 10, 120);
+        burst(e.x, e.y, e.color || '#f6ecd4', e.kind === 'small' ? 4 : 10, 120);
       } else if (e.type === 'gulp') {
         burst(e.x, e.y, e.color, 26, 260);
         addBulge(e.id);
-        if (e.player) {
-          Sound.play('gulp');
-          floatText(e.x, e.y - 30, `+${e.gain}`, '#1f8a71');
-        }
+        if (e.player) Sound.play('gulp');
       } else if (e.type === 'prick') {
         burst(e.x, e.y, '#4fae5e', 8, 160);
         if (e.player) {
@@ -305,6 +369,9 @@
           floatText(e.x, e.y - 30, `-${e.loss}`, '#d8344a');
           if (!calm) shake = 0.25;
         }
+      } else if (e.type === 'step') {
+        Sound.play('step');
+        toast(T(`tut.${e.id}`), Infinity);
       } else if (e.type === 'hop') {
         Sound.play('hop');
       } else if (e.type === 'bump') {
@@ -322,8 +389,11 @@
   function endLevel() {
     const won = world.state === 'won';
     const last = state.levelIndex === LEVELS.length - 1;
-    if (won && state.levelIndex + 2 > state.unlocked) {
-      state.unlocked = Math.min(LEVELS.length, state.levelIndex + 2);
+    const firstWin = state.levelIndex >= state.beaten;
+    const reward = won ? starsFor(state.levelIndex, firstWin) : 0;
+    if (won) {
+      state.stars += reward;
+      if (firstWin) state.beaten = state.levelIndex + 1;
       save();
     }
     $('toast').hidden = true;
@@ -335,9 +405,11 @@
     const whole = Math.round(world.time);
     const time = `${Math.floor(whole / 60)}:${String(whole % 60).padStart(2, '0')}`;
     $('result-title').textContent = T(won ? 'won' : 'lost');
-    if (won) $('result-text').textContent = last ? T('allDone') : T('wonText', { n: shownSize(world.snakes[0]) });
+    if (won && world.tutorial) $('result-text').textContent = T('tutorialDone');
+    else if (won) $('result-text').textContent = last ? T('allDone') : T('wonText', { n: shownSize(world.snakes[0]) });
     else $('result-text').textContent = world.reason === 'eaten' ? T('lostEaten', { n: world.killer }) : T('lostStarved');
     $('result-stats').textContent = T('stats', { time, eaten: world.eaten });
+    $('result-reward').innerHTML = won ? `${T('reward', { n: reward })} ${ICONS.star}` : '';
     $('btn-result-menu').textContent = T('menu');
     const main = $('btn-result-main');
     main.textContent = won && !last ? T('next') : T('retry');
@@ -420,6 +492,7 @@
     Art.drawGround(ctx, w, camX, viewW);
     for (const c of w.cacti) if (near(c.x, 100)) Art.drawCactus(ctx, c);
     for (const f of w.food) if (near(f.x, 40)) Art.drawFood(ctx, f, clock, calm);
+    const marker = w.tutorial && w.tutorial.marker;
 
     const me = shownSize(head);
     const order = w.snakes.filter((s) => s.alive).sort((a, b) => Number(a.isPlayer) - Number(b.isPlayer));
@@ -448,6 +521,8 @@
       });
     }
 
+    if (marker) Art.drawMarker(ctx, marker.x, marker.y, clock, calm);
+
     for (const p of particles) {
       ctx.fillStyle = p.color;
       ctx.globalAlpha = Math.min(1, p.life * 2);
@@ -474,7 +549,7 @@
   function drawPreview() {
     const pic = $('preview').getContext('2d');
     pic.clearRect(0, 0, 560, 170);
-    Art.drawSampleSnake(pic, 560, 170, { skin: state.skin, color: state.color }, calm ? 0.4 : clock, 42);
+    Art.drawSampleSnake(pic, 560, 170, pick, calm ? 0.4 : clock, 42);
   }
 
   function frame(now) {
@@ -573,12 +648,13 @@
   Sound.setMuted(state.muted);
 
   function boot() {
-    const forced = Number(params.get('level'));
+    const forced = params.has('level') ? Number(params.get('level')) : -1;
     if (params.has('skin') && SKINS.includes(params.get('skin'))) state.skin = params.get('skin');
     if (params.has('color')) state.color = COLORS[Number(params.get('color')) % COLORS.length];
-    if (params.get('screen') === 'looks') openLooks(clamp(forced - 1 || 0, 0, LEVELS.length - 1));
-    else if (forced >= 1 && forced <= LEVELS.length) {
-      startLevel(forced - 1, Number(params.get('seed')) || 1);
+    if (params.has('stars')) state.stars = Number(params.get('stars'));
+    if (params.get('screen') === 'looks') openLooks(clamp(forced, 1, LEVELS.length - 1));
+    else if (forced >= 0 && forced < LEVELS.length) {
+      startLevel(forced, Number(params.get('seed')) || 1);
       // Fast-forward with the bot, to look at a level part-way through.
       for (let i = Number(params.get('warp')) || 0; i > 0 && world.state === 'playing'; i--) {
         stepWorld(world, botInput(world, world.snakes[0], 450));
