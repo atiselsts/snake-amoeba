@@ -4,6 +4,8 @@ A side-view browser game for children: a snake that looks a bit like an amoeba e
 smaller snakes, and grows until it reaches the level's target size. Latvian by default, with an
 English switch. Based on `task.md` and a pencil sketch.
 
+![Amoeba Snake: level 4, the player's snake beside a smaller rival](screenshot.png)
+
 ## Run
 
 Open `index.html` in a browser. No server, build step or network is needed: the font is embedded,
